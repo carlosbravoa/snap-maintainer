@@ -126,13 +126,54 @@ directly. It needs the optional `mcp` package:
 pip install 'snap-maintainer[mcp]'   # or, if already installed with pipx: pipx inject snap-maintainer mcp
 ```
 
-Add it to Claude Code (`--scope user` makes it available in every project):
+The agent starts the server as `snap-maintainer mcp`, so `snap-maintainer` must be on
+the agent's PATH (pipx puts it there). If the agent can't find it, use the absolute path,
+e.g. `~/.local/bin/snap-maintainer`, as the command.
+
+**Claude Code** (`--scope user` makes it available in every project):
 
 ```sh
 claude mcp add --scope user snap-maintainer -- snap-maintainer mcp
 ```
 
-For other MCP clients, add this to their server configuration:
+**Codex CLI**:
+
+```sh
+codex mcp add snap-maintainer -- snap-maintainer mcp
+```
+
+or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.snap-maintainer]
+command = "snap-maintainer"
+args = ["mcp"]
+```
+
+**Gemini CLI** (`-s user` makes it available in every project):
+
+```sh
+gemini mcp add -s user snap-maintainer snap-maintainer mcp
+```
+
+**VS Code / Copilot**:
+
+```sh
+code --add-mcp '{"name":"snap-maintainer","command":"snap-maintainer","args":["mcp"]}'
+```
+
+or in `.vscode/mcp.json` (note the `servers` key):
+
+```json
+{
+  "servers": {
+    "snap-maintainer": { "type": "stdio", "command": "snap-maintainer", "args": ["mcp"] }
+  }
+}
+```
+
+**Cursor** (`~/.cursor/mcp.json`), **Windsurf**, **Cline**, **Claude Desktop** and most
+other clients take the common `mcpServers` form in their server configuration:
 
 ```json
 {
