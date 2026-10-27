@@ -312,8 +312,10 @@ def check_report(snaps: dict[str, dict], verbose: bool = False) -> None:
         panel = _detail_panel(name, res, verbose)
         if panel:
             out.print(panel)
+    hint = "[grey50]Run [cyan]snap-maintainer plan[/] for the steps to rebuild and release"
     if not verbose:
-        out.print("[grey50]Run with [cyan]-v[/] for every notice, the commit messages and all notes.")
+        hint += ", or [cyan]-v[/] for every notice and note"
+    out.print(hint + ".[/]")
 
 
 def _detail_panel(name: str, res: dict, verbose: bool) -> Panel | None:
@@ -374,6 +376,51 @@ def _detail_panel(name: str, res: dict, verbose: bool) -> Panel | None:
 
     _, label, color = VERDICT_STYLE.get(res["verdict"], ("", res["verdict"].upper(), "white"))
     title = Text.assemble((name, "bold"), "  ", ("● ", color), (label.lower(), color))
+    return Panel(Group(*parts), title=title, title_align="left", border_style="grey35",
+                 box=box.ROUNDED, padding=(0, 1), width=min(out.width, PANEL_WIDTH))
+
+
+# ---------------------------------------------------------------- rebuild plans
+
+def plan_report(items: list[dict], builds: dict[str, dict]) -> None:
+    if not items:
+        out.print("[green]✓[/] Nothing needs a rebuild or release. "
+                  "[grey50](Run [cyan]snap-maintainer check[/] to refresh the verdicts.)[/]")
+        return
+    for p in items:
+        out.print(_plan_panel(p, builds.get(p["snap"])))
+    out.print("[grey50]Nothing was built or released. "
+              "[cyan]--markdown[/] prints this plan for an issue or an agent; [cyan]--json[/] for scripts.[/]")
+
+
+def _plan_panel(p: dict, build: dict | None) -> Panel:
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(width=10, no_wrap=True, style="grey50")
+    grid.add_column(overflow="fold")
+    for i, w in enumerate(p["why"]):
+        grid.add_row("why" if i == 0 else "", w)
+    grid.add_row("builds via", build_cell(build))
+    target = Text(p["channels"], style="bold").append(f"  {' '.join(p['arches'])}", style="grey50")
+    if p["published_version"]:
+        target.append(f"  now {p['published_version']}", style="grey50")
+    grid.add_row("release to", target)
+
+    steps = Table.grid(padding=(0, 1))
+    steps.add_column(width=3, justify="right", style="bold cyan", no_wrap=True)
+    steps.add_column(overflow="fold")
+    for i, st in enumerate(p["steps"], 1):
+        body = [Text(st["title"])]
+        body += [Text.assemble(("$ ", "grey50"), (c, "cyan")) for c in st["commands"]]
+        if st["note"]:
+            body.append(Text(st["note"], style="grey50 italic"))
+        steps.add_row(f"{i}.", Group(*body))
+
+    parts = [grid, Text(""), steps]
+    if p["notes"]:
+        parts.append(Text(""))
+        parts += [Text.assemble(("ℹ ", "blue"), (n, "grey50")) for n in p["notes"]]
+    _, label, color = VERDICT_STYLE.get(p["verdict"], ("", (p["verdict"] or "unchecked").upper(), "white"))
+    title = Text.assemble((p["snap"], "bold"), "  ", ("● ", color), (label.lower(), color))
     return Panel(Group(*parts), title=title, title_align="left", border_style="grey35",
                  box=box.ROUNDED, padding=(0, 1), width=min(out.width, PANEL_WIDTH))
 

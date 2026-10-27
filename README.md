@@ -1,105 +1,178 @@
 # snap-maintainer
 
-Keeps track of the snaps you publish and (eventually) rebuilds and releases them
-when their upstream changes.
+Find out which of your published snaps need a rebuild or a new release, and why.
 
-## Milestones
+`snap-maintainer` reads your Snap Store account, finds the source repository behind
+each snap, and checks it against three things:
 
-1. **Discovery** (done): list your registered snaps, their channel maps, and their
-   source repos, saved in `inventory.json`.
-2. **Update detection** (done): decide whether each snap needs a rebuild or a new
-   release (`check`).
-3. **Rebuild and release**: run a rebuild and release when you ask for it.
-   - 3a (done): detect how each snap is built (`Builds via` in `discover`/`show`).
-   - 3b: wait for the new revision and release it, the same for every builder.
-   - 3c: trigger builds, one builder at a time.
+- **Security fixes.** Ubuntu has fixed a package your snap stages, and a rebuild
+  would pick up the fix.
+- **Unreleased changes.** Your repo has commits, or a version bump, that aren't in
+  the published revision.
+- **Upstream releases.** A part pulls from a git repo that has moved on.
 
-## Usage
+For every snap that needs work, it writes out the exact steps to rebuild and release
+it, matched to how that snap is built: a GitHub Actions workflow, a Launchpad recipe,
+or a local `snapcraft pack`.
 
-Requires `snapcraft` (logged in: `snapcraft login`) and `gh` (logged in: `gh auth login`).
-`unsquashfs` (squashfs-tools) and `git` are optional: without them, `check` falls back to
-inferred security results and skips upstream tag comparisons.
+It never builds, uploads or releases anything itself. Those steps need someone
+watching, so the tool stops at a plan that a person, or an agent, can follow.
 
-`discover`, `check` and `set-repo` check these first, and stop with the exact command to fix
-anything missing. Exit codes: `0` success, `1` error, `2` a required tool or login is
-missing, `130` interrupted. `--debug` shows a traceback for unexpected errors.
+## Requirements
 
-Output uses colours, a live progress bar and clickable links on a terminal, and plain text
-when piped or when `NO_COLOR` is set.
+- Python 3.10 or later
+- [`snapcraft`](https://snapcraft.io/snapcraft), logged in to the Snap Store as the
+  snaps' publisher: `snapcraft login`
+- The [GitHub CLI](https://cli.github.com/) `gh`, logged in: `gh auth login`
+- Optional:
+  - `unsquashfs` (package `squashfs-tools`): reads build manifests from published
+    snaps, for exact security checks.
+  - `git`: compares pinned `source-tag`s with upstream tags.
+
+The tool checks all of these when it starts, and tells you the command to fix anything
+that's missing.
+
+## Install
+
+With [pipx](https://pipx.pypa.io/):
 
 ```sh
-pipx install --editable .              # or: PYTHONPATH=src python3 -m snap_maintainer ...
-snap-maintainer discover               # all snaps; prompts for repos it can't find
-snap-maintainer discover yatta paint98 # just these snaps
-snap-maintainer discover --no-input    # never prompt (for cron/CI)
-snap-maintainer set-repo <snap> <url>  # pin a repo by hand; discovery never overwrites it
-snap-maintainer set-build <snap> <method> [--workflow FILE]  # pin how a snap gets rebuilt
-snap-maintainer show [--json]
-snap-maintainer check [snaps...] [-v]  # what needs a rebuild/release, and why
-snap-maintainer check --refresh        # ignore today's cached archive/USN data
+pipx install git+https://github.com/carlosbravoa/snap-maintainer.git
 ```
 
-## How a repo is found
+From a checkout, for development:
 
-Candidates are tried in this order, and the first one that resolves is used:
+```sh
+git clone https://github.com/carlosbravoa/snap-maintainer.git
+cd snap-maintainer
+pipx install --editable .
+```
 
-1. A repo you set with `set-repo` or entered at the prompt.
-2. The store's `links.source`.
-3. GitHub URLs among the store's website, issues and contact links.
-4. `github.com/<your gh login>/<snap name>`. This catches private snaps, which the
+You can also run it without installing, from the checkout:
+`PYTHONPATH=src python3 -m snap_maintainer <command>`.
+
+## Quick start
+
+```sh
+mkdir ~/snaps && cd ~/snaps    # the inventory is saved in the current directory
+snap-maintainer discover       # find your snaps, their repos and how they're built
+snap-maintainer check          # decide which need a rebuild or release
+snap-maintainer plan           # the steps to rebuild and release each of them
+```
+
+The first `check` downloads Ubuntu archive and security data and the published snaps'
+manifests, so it takes a minute or two. Later runs use a cache.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `discover [snaps...]` | Lists the snaps registered to your account, their channels, source repos and builders, and saves them to `inventory.json`. Prompts for a repo it can't find (`--no-input` to skip). |
+| `check [snaps...]` | Gives each snap a verdict, `rebuild`, `update` or `up to date`, with the reasons. `-v` shows every notice, commit and note; `--refresh` re-downloads cached Ubuntu data. |
+| `plan [snaps...]` | Shows the steps to rebuild and release every snap that needs it, or just the named ones. `--all` includes up-to-date snaps; `--markdown` and `--json` print it for an issue, an agent or a script. Runs nothing. |
+| `show [--json]` | Prints the inventory without contacting anything. |
+| `set-repo <snap> <url>` | Sets a snap's source repo by hand. |
+| `set-build <snap> <method> [--workflow FILE]` | Sets how a snap is built: `github-workflow`, `launchpad`, `local` or `manual`. |
+
+Repos and builders you set by hand are never overwritten by `discover`.
+
+Global options go before the command: `-i FILE` uses another inventory file, and
+`--debug` shows a traceback for unexpected errors.
+
+Exit codes are `0` for success, `1` for an error, `2` when a required tool or login is
+missing, and `130` when interrupted.
+
+Output uses colours, a progress bar and clickable links in a terminal, and plain text
+when piped or when `NO_COLOR` is set.
+
+### Handing a plan to an agent
+
+`plan --markdown` prints a self-contained checklist with the reasons, the target
+channel and architectures, and copy-paste commands:
+
+```sh
+snap-maintainer plan --markdown > rebuild-plan.md
+snap-maintainer plan --markdown hello-nginx | gh issue create -R you/hello-nginx \
+  --title "Rebuild for security fixes" --body-file -
+```
+
+## How it works
+
+### Finding the repo
+
+For each snap, the first of these that points to a repo that exists is used:
+
+1. A repo you set with `set-repo`, or typed at the prompt.
+2. The store listing's source code link.
+3. A GitHub URL among the listing's website, issues or contact links.
+4. `github.com/<your GitHub login>/<snap name>`. This catches private snaps, which the
    public store API can't see.
-5. An interactive prompt, when running on a TTY.
+5. A prompt, when running in a terminal.
 
-On GitHub, the tool checks that the repo exists (following renames, which are
-recorded as `redirected_from`), records its default branch, finds `snapcraft.yaml`,
-and lists its workflows. Repos on other hosts are recorded but not checked yet.
+On GitHub, renamed repos are followed (and noted), and the tool records the default
+branch, the location of `snapcraft.yaml` and the workflow files. Repos on other hosts
+are recorded but not inspected.
 
-`status` is one of `ok`, `no-snapcraft-yaml`, `repo-unreachable`, `needs-repo` or
-`unregistered`.
+### Detecting the builder
 
-## How the builder is detected
+| Builder | When |
+|---|---|
+| `github-workflow` | A workflow builds the snap (`snapcore/action-build`, or `snapcraft` / `snapcraft pack` in a step). The tool records whether it also uploads (`snapcraft upload`, `snapcore/action-publish`), what triggers it (tags, manual dispatch, releases, pushes), and any hard-coded channel. |
+| `launchpad` | A Launchpad snap recipe builds this snap from the repo. |
+| `local` | Neither of the above: build with `snapcraft pack` on your machine. |
+| `manual` | Only when you set it: you rebuild the snap some other way. |
 
-`discover` records how each snap gets built, under `build` in `inventory.json`:
+A workflow or recipe that uploads to the store is preferred over one that only
+builds. The candidates that weren't chosen are kept in the inventory.
 
-| Builder | Detected when | Preference |
+### Deciding what needs work
+
+`check` looks at the most stable published revision of each architecture on the
+`latest` track.
+
+| Signal | Verdict | When |
 |---|---|---|
-| `github-workflow` | A workflow in `.github/workflows/` builds a snap (`snapcore/action-build`, or `snapcraft` / `snapcraft pack` in a `run:` step). It's recorded whether it also uploads (`snapcraft upload` or `snapcore/action-publish`), how it's triggered (tags, dispatch, release, push), and any channel it hard-codes. | 1st if it uploads, 3rd if it only builds |
-| `launchpad` | A Launchpad snap recipe builds from the repo for this snap name, found with one `findByURLPrefix` query per GitHub owner. | 2nd if it uploads, 4th if not |
-| `local` | Nothing above: build with snapcraft on this machine. | fallback |
-| `manual` | Only set by you: rebuilds happen outside this tool. | — |
+| Security | `rebuild` | A [Ubuntu Security Notice](https://ubuntu.com/security/notices) fixes a package the snap stages, and the fix is in the public Ubuntu archive. |
+| Source | `update` | The repo has commits since the revision was uploaded, or `snapcraft.yaml` declares a different version. |
+| Upstream | `update` | A part's git source has a newer tag than its `source-tag`, or new commits on the branch it tracks (GitHub only). |
 
-Other candidates are kept under `alternatives`. `set-build` overrides the detection, and
-discovery keeps your choice; for `github-workflow` it defaults to the detected workflow
-that uploads. `set-repo` re-runs detection unless you've set the builder yourself.
+For security, the check is **exact** when the published snap contains a build
+manifest (`snap/manifest.yaml`). That manifest records the version of every staged
+package, so a notice counts only if the snap has an older version than the fix.
 
-## How `check` decides
+Without a manifest, the check is **inferred**: it works out which packages the snap
+stages (its `stage-packages` plus their dependencies, minus what the base snap
+provides), and counts any notice issued after the revision was uploaded.
 
-`check` looks at the most stable published revision per architecture on the
-`latest` track, and compares it with:
+snapcraft writes the manifest only when building with `SNAPCRAFT_BUILD_INFO=1`.
+Launchpad and `snapcore/action-build` set it automatically; for local builds, the
+plans include it in the build command.
 
-| Signal | Verdict | How it's detected |
-|---|---|---|
-| security | `rebuild` | A USN fixes a package the snap stages, and the fixed version is in the public archive. If the published revision has a build manifest, its exact staged versions are compared with the fixed version (`[manifest]`). Otherwise the USN counts if it was issued after the upload (`[inferred]`), using the `stage-packages` for that arch plus their Depends closure, minus what the base snap ships. |
-| source | `update-available` | Commits on the repo's default branch since the upload, or `version:` in `snapcraft.yaml` differs from the published one. |
-| upstream | `update-available` | A part with a remote git source pins a `source-tag` that has newer releases, or tracks a branch (GitHub only) with new commits. |
+## Limitations
 
-Otherwise the verdict is `up-to-date` (or `unknown` / `unpublished`). Results are
-stored under `update_check` in `inventory.json`.
+- Private snaps can't be downloaded, so their security checks are always inferred.
+- Fixes that exist only in Ubuntu Pro (ESM) are shown as notes, because a rebuild
+  can't pick them up.
+- Non-security Ubuntu updates, and dependencies bundled by language plugins (pip,
+  npm, cargo, go), aren't checked.
+- Repo inspection, workflow detection and branch checks only support GitHub.
+- The inferred check reads the base snap's package list from `/snap/<base>/current`.
+  If that base isn't installed locally, it may include packages the base already
+  ships.
 
-Limitations:
+## Data and privacy
 
-- Exact security checks need `snap/manifest.yaml` in the published snap, which
-  snapcraft writes only when building with `SNAPCRAFT_BUILD_INFO=1` (Launchpad and
-  `snapcore/action-build` set it by default). Each public revision is downloaded once
-  and its manifest cached in `~/.cache/snap-maintainer` permanently. Private snaps
-  can't be downloaded, so they're always inferred.
-- `check` refreshes each snap's channel map from the store, so it evaluates what's
-  published now, not what was published at discovery time.
-- USN fixes that exist only in Ubuntu Pro (ESM) are listed as notes, since a
-  rebuild can't pick them up.
-- Non-security archive updates, and dependencies bundled by language plugins
-  (pip, npm, cargo, go), aren't checked.
-- The base snap's packages are read from `/snap/<base>/current`. If that base
-  isn't installed locally, results may include packages the base already ships.
-- Ubuntu archive and USN data are cached for 24h in `~/.cache/snap-maintainer`,
-  roughly 20 MB per series and architecture.
+- `inventory.json` is written to the current directory, or the file given with `-i`.
+- Ubuntu archive and security data is cached for 24 hours in
+  `~/.cache/snap-maintainer` (about 20 MB per Ubuntu release and architecture).
+- Manifests of published revisions are cached there permanently. Each public
+  revision is downloaded once.
+- Your Snap Store and GitHub logins stay with `snapcraft` and `gh`; this tool never
+  reads or stores them.
+
+## Development
+
+```sh
+pip install pytest
+python3 -m pytest
+```

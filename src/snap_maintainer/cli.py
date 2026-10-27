@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from snap_maintainer import builders, checks, discovery, preflight, store, ui
+from snap_maintainer import builders, checks, discovery, hints, preflight, store, ui
 
 EXIT_ERROR = 1
 EXIT_PREFLIGHT = 2
@@ -72,6 +72,30 @@ def _set_build(args) -> int:
     return 0
 
 
+def _plan(args) -> int:
+    inv = discovery.load(args.inventory)
+    snaps = inv.get("snaps", {})
+    if not snaps:
+        ui.error(f"No snaps in {args.inventory}.", "Run: snap-maintainer discover")
+        return EXIT_ERROR
+    unknown = [n for n in args.snaps if n not in snaps]
+    if unknown:
+        ui.error(f"Not in the inventory: {', '.join(unknown)}.")
+        return EXIT_ERROR
+    unchecked = [n for n in (args.snaps or snaps) if not snaps[n].get("update_check")]
+    if unchecked and not (args.json or args.markdown):
+        ui.err.print(f"[yellow]![/] Not checked yet: [bold]{', '.join(sorted(unchecked))}[/]. "
+                     "Run [cyan]snap-maintainer check[/] first for a complete plan.")
+    items = hints.plans(snaps, args.snaps or None, args.all)
+    if args.json:
+        print(json.dumps(items, indent=2))
+    elif args.markdown:
+        print(hints.to_markdown(items))
+    else:
+        ui.plan_report(items, {n: s.get("build") for n, s in snaps.items()})
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="snap-maintainer", description=__doc__)
     p.add_argument("-i", "--inventory", type=Path, default=Path("inventory.json"),
@@ -94,6 +118,15 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("--workflow", help="workflow file for github-workflow (default: the "
                                        "detected one that uploads)")
 
+    pl = sub.add_parser("plan", help="show how to rebuild and release snaps that need it "
+                                     "(runs nothing)")
+    pl.add_argument("snaps", nargs="*", help="only these snaps (default: every snap whose "
+                                             "last check says rebuild or update)")
+    pl.add_argument("--all", action="store_true", help="include snaps that are up to date")
+    fmt = pl.add_mutually_exclusive_group()
+    fmt.add_argument("--markdown", action="store_true", help="print Markdown (for an issue or an agent)")
+    fmt.add_argument("--json", action="store_true", help="print JSON")
+
     sh = sub.add_parser("show", help="print the current inventory")
     sh.add_argument("--json", action="store_true")
 
@@ -105,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
     try:
+        if args.cmd == "plan":
+            return _plan(args)
         if args.cmd == "show":
             inv = discovery.load(args.inventory)
             if args.json:

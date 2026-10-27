@@ -102,10 +102,14 @@ def discover_snap(
 
     r = resolve_repo(name, info.links, (previous or {}).get("repo"), gh_login, ask)
     repo = r.to_dict() if r else None
-    return {
+    record = {
         **_snap_record(entry, info, repo, errors),
         "build": detect_build(name, repo, (previous or {}).get("build"), lp_recipes),
     }
+    # keep the last check's results; `check` refreshes them
+    if previous and previous.get("update_check"):
+        record["update_check"] = previous["update_check"]
+    return record
 
 
 def detect_build(name: str, repo: dict | None, previous: dict | None,
