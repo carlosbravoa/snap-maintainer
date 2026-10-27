@@ -1,0 +1,19 @@
+[project]
+name = "snap-maintainer"
+version = "0.1.0"
+description = "Discover published snaps, their source repos, and (later) rebuild them when updates are available"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6"]
+
+[project.scripts]
+snap-maintainer = "snap_maintainer.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
