@@ -1,6 +1,6 @@
 [project]
 name = "snap-maintainer"
-version = "0.1.1"
+version = "0.1.2"
 description = "Find out which of your published snaps need a rebuild or a new release, and how to do it"
 readme = "README.md"
 license = "MIT"
