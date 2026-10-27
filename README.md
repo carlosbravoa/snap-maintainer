@@ -1,5 +1,8 @@
 # snap-maintainer
 
+[![PyPI](https://img.shields.io/pypi/v/snap-maintainer)](https://pypi.org/project/snap-maintainer/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/carlosbravoa/snap-maintainer/blob/master/LICENSE)
+
 Find out which of your published snaps need a rebuild or a new release, and why.
 
 `snap-maintainer` reads your Snap Store account, finds the source repository behind
@@ -36,16 +39,22 @@ that's missing.
 
 ## Install
 
-With [pipx](https://pipx.pypa.io/):
+From [PyPI](https://pypi.org/project/snap-maintainer/), with pip or [pipx](https://pipx.pypa.io/):
+
+```sh
+pip install snap-maintainer        # or: pipx install snap-maintainer
+```
+
+To use it from an agent, install the MCP extra instead:
+
+```sh
+pip install 'snap-maintainer[mcp]'  # or: pipx install 'snap-maintainer[mcp]'
+```
+
+The latest development version comes straight from GitHub:
 
 ```sh
 pipx install git+https://github.com/carlosbravoa/snap-maintainer.git
-```
-
-To use it from an agent, add the MCP support too:
-
-```sh
-pipx inject snap-maintainer mcp
 ```
 
 From a checkout, for development:
@@ -114,7 +123,7 @@ server over stdio, so an agent such as Claude Code can discover, check and plan 
 directly. It needs the optional `mcp` package:
 
 ```sh
-pipx inject snap-maintainer mcp
+pip install 'snap-maintainer[mcp]'   # or, if already installed with pipx: pipx inject snap-maintainer mcp
 ```
 
 Add it to Claude Code (`--scope user` makes it available in every project):
