@@ -119,7 +119,7 @@ def discover(
     path: Path,
     only: list[str] | None = None,
     ask: Callable[[str, str | None], str | None] | None = None,
-    progress: Callable[[str], None] = lambda _: None,
+    progress: Callable[[str, int, int], None] = lambda *_: None,
 ) -> dict:
     inventory = load(path)
     snaps = inventory.setdefault("snaps", {})
@@ -131,8 +131,8 @@ def discover(
             raise store.StoreError(f"not registered to you: {', '.join(sorted(unknown))}")
         registered = [s for s in registered if s["name"] in only]
 
-    for entry in registered:
-        progress(entry["name"])
+    for i, entry in enumerate(registered):
+        progress(entry["name"], i, len(registered))
         snaps[entry["name"]] = discover_snap(entry, snaps.get(entry["name"]), login, ask)
         save(path, inventory)  # persist as we go so an interrupted run isn't wasted
 

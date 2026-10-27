@@ -1,104 +1,76 @@
-"""Command-line entry point."""
+"""Discover your published snaps and find out which need a rebuild or release."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 
-from snap_maintainer import checks, discovery, store
+from snap_maintainer import checks, discovery, preflight, store, ui
+
+EXIT_ERROR = 1
+EXIT_PREFLIGHT = 2
 
 
-def _prompt(name: str, hint: str | None) -> str | None:
-    msg = f"\n{name}: couldn't find its source repo ({hint}).\n  Repo URL (blank to skip): "
-    try:
-        return input(msg).strip() or None
-    except EOFError:
+def _check_targets(args) -> tuple[dict, list[str]] | None:
+    """Validate the inventory and snap names before anything slow runs."""
+    inv = discovery.load(args.inventory)
+    known = inv.get("snaps", {})
+    if not known:
+        ui.error(f"No snaps in {args.inventory}.", "Run: snap-maintainer discover")
         return None
+    names = args.snaps or sorted(known)
+    unknown = [n for n in names if n not in known]
+    if unknown:
+        ui.error(f"Not in the inventory: {', '.join(unknown)}.",
+                 "Run: snap-maintainer discover " + " ".join(unknown))
+        return None
+    return inv, names
 
 
-def _channels_summary(channels: list[dict]) -> str:
-    stable = [c for c in channels if c["risk"] == "stable"]
-    shown = stable or channels
-    if not shown:
-        return "-"
-    versions = sorted({c["version"] or "?" for c in shown})
-    archs = sorted({c["arch"] for c in shown})
-    return f"{shown[0]['risk']} {'/'.join(versions)} ({','.join(archs)})"
+def _check(args, inv: dict, names: list[str]) -> int:
+    known = inv["snaps"]
+    with ui.progress("Checking") as (update, _):
+        for i, n in enumerate(names):
+            update(n, i, len(names))
+            known[n]["update_check"] = checks.check_snap(known[n], args.refresh)
+            discovery.save(args.inventory, inv)
+        update("", len(names), len(names))
+    ui.check_report({n: known[n] for n in names}, args.verbose)
+    return 0
 
 
-def print_table(inventory: dict) -> None:
-    rows = [("SNAP", "STATUS", "PUBLISHED", "REPO", "SNAPCRAFT.YAML")]
-    for name in sorted(inventory.get("snaps", {})):
-        s = inventory["snaps"][name]
-        r = s.get("repo") or {}
-        repo = r.get("url", "-")
-        if r.get("source") and r["source"] != "store-links":
-            repo += f" [{r['source']}]"
-        if r.get("redirected_from"):
-            repo += f" (moved from {r['redirected_from'].rsplit('/', 1)[-1]})"
-        rows.append((name, s.get("status", "?"), _channels_summary(s.get("channels", [])),
-                     repo, r.get("snapcraft_yaml") or "-"))
-    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
-    for row in rows:
-        print("  ".join(cell.ljust(w) for cell, w in zip(row, widths)).rstrip())
-    by_repo: dict[str, list[str]] = {}
-    for n, s in inventory.get("snaps", {}).items():
-        if (s.get("repo") or {}).get("url"):
-            by_repo.setdefault(s["repo"]["url"], []).append(n)
-    for url, names in sorted(by_repo.items()):
-        if len(names) > 1:
-            print(f"\nnote: {', '.join(sorted(names))} share {url}; "
-                  "if that's wrong, use set-repo to point each at its own repo")
-    problems = [n for n, s in inventory.get("snaps", {}).items() if s.get("status") != "ok"]
-    if problems:
-        print(f"\n{len(problems)} snap(s) need attention. Fix a repo with: "
-              "snap-maintainer set-repo <snap> <url>")
+def _discover(args) -> int:
+    with ui.progress("Discovering") as (update, pause):
+        def ask(name: str, hint: str | None) -> str | None:
+            with pause():
+                return ui.prompt_repo(name, hint)
+
+        interactive = not args.no_input and sys.stdin.isatty()
+        inv = discovery.discover(args.inventory, only=args.snaps or None,
+                                 ask=ask if interactive else None, progress=update)
+    ui.inventory_table(inv)
+    return 0
 
 
-_VERDICT_ORDER = [checks.VERDICT_REBUILD, checks.VERDICT_UPDATE, checks.VERDICT_UNKNOWN,
-                  checks.VERDICT_UNPUBLISHED, checks.VERDICT_OK]
-
-
-def _reason_line(r: dict) -> str:
-    if r["kind"] == "security":
-        staged = f"has {r['staged_version']}, " if r.get("staged_version") else ""
-        return (f"{r['usn']} ({r['severity']}, {r['issued'][:10]}): {r['source']} "
-                f"{staged}fixed in {r['fixed_version']} [{', '.join(r['arches'])}]")
-    return r["detail"]
-
-
-def print_check_report(snaps: dict[str, dict], verbose: bool = False) -> None:
-    order = sorted(snaps, key=lambda n: (_VERDICT_ORDER.index(snaps[n]["update_check"]["verdict"]), n))
-    for name in order:
-        res = snaps[name]["update_check"]
-        pub = ", ".join(
-            f"{t['risk']} r{t['revision']} {t['arch']}"
-            + (f" [{t['security_method']}]" if t.get("security_method") else "")
-            for t in res["targets"]) or "-"
-        print(f"{name}: {res['verdict'].upper()}  ({pub})")
-        reasons = res["reasons"] if verbose else res["reasons"][:3]
-        for r in reasons:
-            print(f"    {r['kind']:<9} {_reason_line(r)}")
-            if verbose:
-                for cm in r.get("commits", []):
-                    print(f"              {cm['sha']} {cm['message'][:70]}")
-        if len(res["reasons"]) > len(reasons):
-            print(f"    ... and {len(res['reasons']) - len(reasons)} more (use -v)")
-        notes = res["notes"] if verbose else [n for n in res["notes"] if n.startswith("check failed")
-                                              or res["verdict"] == checks.VERDICT_UNKNOWN]
-        for n in notes:
-            print(f"    note      {n}")
-    counts = {v: sum(1 for n in snaps if snaps[n]["update_check"]["verdict"] == v)
-              for v in _VERDICT_ORDER}
-    print("\n" + ", ".join(f"{c} {v}" for v, c in counts.items() if c))
+def _set_repo(args) -> int:
+    s = discovery.set_repo(args.inventory, args.snap, args.url)
+    r = s["repo"]
+    if s["status"] == "ok":
+        ui.success(f"[bold]{args.snap}[/] → [link {r['url']}]{r['url']}[/] "
+                   f"[grey50]({r['snapcraft_yaml']})[/]")
+        return 0
+    ui.error(f"{args.snap} → {r['url']}: {s['status']}", r.get("error"))
+    return EXIT_ERROR
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="snap-maintainer", description=__doc__)
     p.add_argument("-i", "--inventory", type=Path, default=Path("inventory.json"),
                    help="inventory file (default: ./inventory.json)")
+    p.add_argument("--debug", action="store_true", help="show tracebacks on errors")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("discover", help="scan your published snaps and locate their repos")
@@ -121,40 +93,35 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
     try:
+        if args.cmd == "show":
+            inv = discovery.load(args.inventory)
+            if args.json:
+                print(json.dumps(inv, indent=2))
+            else:
+                ui.inventory_table(inv)
+            return 0
         if args.cmd == "check":
-            inv = discovery.load(args.inventory)
-            names = args.snaps or sorted(inv.get("snaps", {}))
-            unknown = [n for n in names if n not in inv.get("snaps", {})]
-            if not names or unknown:
-                print(f"error: not in the inventory: {', '.join(unknown) or 'anything'}; "
-                      "run 'snap-maintainer discover' first", file=sys.stderr)
-                return 1
-            for n in names:
-                print(f"checking {n}...", file=sys.stderr)
-                inv["snaps"][n]["update_check"] = checks.check_snap(inv["snaps"][n], args.refresh)
-                discovery.save(args.inventory, inv)
-            print(file=sys.stderr)
-            print_check_report({n: inv["snaps"][n] for n in names}, args.verbose)
-        elif args.cmd == "discover":
-            ask = None if args.no_input or not sys.stdin.isatty() else _prompt
-            inv = discovery.discover(
-                args.inventory, only=args.snaps or None, ask=ask,
-                progress=lambda n: print(f"scanning {n}...", file=sys.stderr),
-            )
-            print(file=sys.stderr)
-            print_table(inv)
-        elif args.cmd == "set-repo":
-            s = discovery.set_repo(args.inventory, args.snap, args.url)
-            r = s["repo"]
-            print(f"{args.snap}: {r['url']} -> {s['status']}"
-                  + (f" ({r['error']})" if r.get("error") else ""))
-        elif args.cmd == "show":
-            inv = discovery.load(args.inventory)
-            print(json.dumps(inv, indent=2)) if args.json else print_table(inv)
+            targets = _check_targets(args)
+            if targets is None:
+                return EXIT_ERROR
+        if not ui.preflight(preflight.run(args.cmd)):
+            return EXIT_PREFLIGHT
+        if args.cmd == "check":
+            return _check(args, *targets)
+        return {"discover": _discover, "set-repo": _set_repo}[args.cmd](args)
     except store.StoreError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
+        ui.error(str(e))
+        return EXIT_ERROR
     except KeyboardInterrupt:
-        print("\ninterrupted; partial results saved", file=sys.stderr)
+        ui.error("Interrupted.", "Results so far are saved in the inventory.")
         return 130
-    return 0
+    except json.JSONDecodeError as e:
+        ui.error(f"{args.inventory} isn't valid JSON: {e}",
+                 "Fix or delete it, then run: snap-maintainer discover")
+        return EXIT_ERROR
+    except Exception as e:
+        if args.debug:
+            traceback.print_exc()
+        ui.error(f"Unexpected error: {type(e).__name__}: {e}",
+                 None if args.debug else "Run again with --debug for the full traceback.")
+        return EXIT_ERROR

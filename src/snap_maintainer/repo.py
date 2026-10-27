@@ -68,9 +68,12 @@ def candidates_from_store(links: dict[str, list[str]]) -> list[tuple[str, str]]:
 
 def run_gh(args: list[str]) -> tuple[int, str]:
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=60)
     except FileNotFoundError:
         return 127, "gh not installed"
+    except subprocess.TimeoutExpired:
+        return 124, "gh timed out"
     return proc.returncode, proc.stdout if proc.returncode == 0 else proc.stderr
 
 

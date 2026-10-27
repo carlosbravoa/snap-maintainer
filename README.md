@@ -14,9 +14,18 @@ when their upstream changes.
 ## Usage
 
 Requires `snapcraft` (logged in: `snapcraft login`) and `gh` (logged in: `gh auth login`).
+`unsquashfs` (squashfs-tools) and `git` are optional: without them, `check` falls back to
+inferred security results and skips upstream tag comparisons.
+
+`discover`, `check` and `set-repo` check these first, and stop with the exact command to fix
+anything missing. Exit codes: `0` success, `1` error, `2` a required tool or login is
+missing, `130` interrupted. `--debug` shows a traceback for unexpected errors.
+
+Output uses colours, a live progress bar and clickable links on a terminal, and plain text
+when piped or when `NO_COLOR` is set.
 
 ```sh
-pip install -e .                       # or: PYTHONPATH=src python3 -m snap_maintainer ...
+pipx install --editable .              # or: PYTHONPATH=src python3 -m snap_maintainer ...
 snap-maintainer discover               # all snaps; prompts for repos it can't find
 snap-maintainer discover yatta paint98 # just these snaps
 snap-maintainer discover --no-input    # never prompt (for cron/CI)

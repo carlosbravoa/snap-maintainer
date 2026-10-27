@@ -181,7 +181,7 @@ def source_reasons(repo: dict, sy, targets: list[dict]) -> list[dict]:
                 "kind": "source",
                 "detail": f"{len(commits)}{'+' if len(commits) == 100 else ''} commit(s) on "
                           f"{repo['default_branch']} since {ref['risk']} r{ref['revision']} "
-                          f"was uploaded ({since})",
+                          f"was uploaded on {since[:10]}",
                 "commits": [
                     {"sha": c["sha"][:10], "date": c["commit"]["committer"]["date"],
                      "message": c["commit"]["message"].splitlines()[0]}
@@ -266,7 +266,7 @@ def upstream_reasons(sy, targets: list[dict], notes: list[str]) -> list[dict]:
             reasons.append({
                 "kind": "upstream", "part": src.part, "url": src.url,
                 "detail": f"part '{src.part}' tracks {src.branch or 'the default branch'}, "
-                          f"which has {n}{'+' if n == 100 else ''} new commit(s) since {since}",
+                          f"which has {n}{'+' if n == 100 else ''} new commit(s) since {since[:10]}",
             })
     return reasons
 

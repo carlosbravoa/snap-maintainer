@@ -3,7 +3,7 @@ name = "snap-maintainer"
 version = "0.1.0"
 description = "Discover published snaps, their source repos, and (later) rebuild them when updates are available"
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6"]
+dependencies = ["PyYAML>=6", "rich>=13"]
 
 [project.scripts]
 snap-maintainer = "snap_maintainer.cli:main"

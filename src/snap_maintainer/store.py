@@ -44,11 +44,15 @@ class StoreInfo:
         return asdict(self)
 
 
-def _run(cmd: list[str]) -> str:
+def _run(cmd: list[str], timeout: int = 120) -> str:
+    # stdin is closed so a logged-out snapcraft fails instead of prompting for an email
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=timeout)
     except FileNotFoundError as e:
         raise StoreError(f"{cmd[0]} not found; is it installed?") from e
+    except subprocess.TimeoutExpired as e:
+        raise StoreError(f"{' '.join(cmd)} timed out after {timeout}s") from e
     if proc.returncode != 0:
         raise StoreError(f"{' '.join(cmd)} failed: {proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout
