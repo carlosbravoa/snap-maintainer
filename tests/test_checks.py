@@ -184,7 +184,8 @@ def _source(monkeypatch, out):
 
 def test_source_commit_soon_after_upload_warns(monkeypatch):
     [r] = _source(monkeypatch, _commits("2026-10-27T20:46:29Z"))
-    assert "2026-10-27 20:04 UTC" in r["warning"] and "2026-10-27 20:46 UTC" in r["warning"]
+    assert r["warning"] == ("1 commit(s) after the upload: last commit at 2026-10-27 20:46 UTC, "
+                            "snap uploaded at 2026-10-27 20:04 UTC")
 
 
 def test_source_commit_long_after_upload_no_warning(monkeypatch):

@@ -199,9 +199,8 @@ def source_reasons(repo: dict, sy, targets: list[dict]) -> list[dict]:
             }
             if (_ts(last) - _ts(since)).total_seconds() <= SAME_CHANGE_WINDOW_S:
                 reason["warning"] = (
-                    f"may be a false positive: snap uploaded at {_hm(since)}, "
-                    f"last commit at {_hm(last)}; if the upload was built from these "
-                    "changes before they were committed, it is already up to date"
+                    f"{len(commits)} commit(s) after the upload: last commit at {_hm(last)}, "
+                    f"snap uploaded at {_hm(since)}"
                 )
             reasons.append(reason)
     if sy.version and ref.get("version") and sy.version != ref["version"]:
