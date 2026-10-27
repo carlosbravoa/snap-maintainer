@@ -8,6 +8,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = ["PyYAML>=6", "rich>=13"]
 
+[project.optional-dependencies]
+mcp = ["mcp>=2.3"]
+
 [project.urls]
 Homepage = "https://github.com/carlosbravoa/snap-maintainer"
 

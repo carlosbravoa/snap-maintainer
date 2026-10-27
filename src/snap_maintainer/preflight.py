@@ -40,6 +40,14 @@ def check_snapcraft() -> Check:
         return Check("snapcraft", False, True, "not installed",
                      fix="sudo snap install snapcraft --classic")
     code, out = _run(["snapcraft", "whoami"])
+    if code != 0 and "keyring" in out.lower() and not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        # typical when an MCP client or cron starts us with a minimal environment
+        return Check("snapcraft", False, True,
+                     "can't reach the keyring holding the Snap Store login "
+                     "(DBUS_SESSION_BUS_ADDRESS isn't set in this environment)",
+                     fix="pass DBUS_SESSION_BUS_ADDRESS through to this process, or set "
+                         "SNAPCRAFT_STORE_CREDENTIALS to the output of "
+                         "`snapcraft export-login -`")
     if code != 0:
         via_env = " (from SNAPCRAFT_STORE_CREDENTIALS)" if os.environ.get(
             "SNAPCRAFT_STORE_CREDENTIALS") else ""

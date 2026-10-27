@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -96,10 +97,23 @@ def _plan(args) -> int:
     return 0
 
 
+def _mcp(args) -> int:
+    try:
+        from snap_maintainer import mcp_server
+    except ImportError as e:
+        ui.error(f"The MCP server needs the 'mcp' package ({e.name or e} is missing).",
+                 "Install it with: pipx inject snap-maintainer mcp   "
+                 "(or: pip install 'snap-maintainer[mcp]')")
+        return EXIT_ERROR
+    mcp_server.run(args.inventory)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="snap-maintainer", description=__doc__)
-    p.add_argument("-i", "--inventory", type=Path, default=Path("inventory.json"),
-                   help="inventory file (default: ./inventory.json)")
+    p.add_argument("-i", "--inventory", type=Path, default=None,
+                   help="inventory file (default: $SNAP_MAINTAINER_INVENTORY, or "
+                        "./inventory.json; for mcp, ~/.local/share/snap-maintainer/inventory.json)")
     p.add_argument("--debug", action="store_true", help="show tracebacks on errors")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -127,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     fmt.add_argument("--markdown", action="store_true", help="print Markdown (for an issue or an agent)")
     fmt.add_argument("--json", action="store_true", help="print JSON")
 
+    sub.add_parser("mcp", help="run an MCP server (stdio) so an agent can use these tools "
+                               "(needs the mcp extra)")
+
     sh = sub.add_parser("show", help="print the current inventory")
     sh.add_argument("--json", action="store_true")
 
@@ -137,6 +154,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="re-download archive and security data even if cached today")
 
     args = p.parse_args(argv)
+    if args.cmd == "mcp":
+        return _mcp(args)
+    if args.inventory is None:
+        env = os.environ.get("SNAP_MAINTAINER_INVENTORY")
+        args.inventory = Path(env).expanduser() if env else Path("inventory.json")
     try:
         if args.cmd == "plan":
             return _plan(args)

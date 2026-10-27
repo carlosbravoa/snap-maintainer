@@ -73,11 +73,14 @@ manifests, so it takes a minute or two. Later runs use a cache.
 | `show [--json]` | Prints the inventory without contacting anything. |
 | `set-repo <snap> <url>` | Sets a snap's source repo by hand. |
 | `set-build <snap> <method> [--workflow FILE]` | Sets how a snap is built: `github-workflow`, `launchpad`, `local` or `manual`. |
+| `mcp` | Runs an MCP server so an agent can use the tool directly. See [Use it from an agent (MCP)](#use-it-from-an-agent-mcp). |
 
 Repos and builders you set by hand are never overwritten by `discover`.
 
 Global options go before the command: `-i FILE` uses another inventory file, and
-`--debug` shows a traceback for unexpected errors.
+`--debug` shows a traceback for unexpected errors. The `SNAP_MAINTAINER_INVENTORY`
+environment variable sets the inventory file too, which is handy for always using the
+same one.
 
 Exit codes are `0` for success, `1` for an error, `2` when a required tool or login is
 missing, and `130` when interrupted.
@@ -95,6 +98,64 @@ snap-maintainer plan --markdown > rebuild-plan.md
 snap-maintainer plan --markdown hello-nginx | gh issue create -R you/hello-nginx \
   --title "Rebuild for security fixes" --body-file -
 ```
+
+## Use it from an agent (MCP)
+
+`snap-maintainer mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io/)
+server over stdio, so an agent such as Claude Code can discover, check and plan rebuilds
+directly. It needs the optional `mcp` package:
+
+```sh
+pipx inject snap-maintainer mcp
+```
+
+Add it to Claude Code (`--scope user` makes it available in every project):
+
+```sh
+claude mcp add --scope user snap-maintainer -- snap-maintainer mcp
+```
+
+For other MCP clients, add this to their server configuration:
+
+```json
+{
+  "mcpServers": {
+    "snap-maintainer": { "command": "snap-maintainer", "args": ["mcp"] }
+  }
+}
+```
+
+The server provides these tools:
+
+| Tool | What it does |
+|---|---|
+| `get_inventory` | Known snaps, their repos, builders and last verdicts. Read-only and fast. |
+| `discover_snaps` | Same as `discover`. |
+| `check_snaps` | Same as `check`, with progress updates. |
+| `rebuild_plan` | Same as `plan`, as Markdown or JSON. Read-only. |
+| `set_repo`, `set_build` | Same as the commands. |
+
+It also provides a `maintain_snaps` prompt that walks through the whole flow.
+
+Like the command line, the server never builds, uploads or releases anything. Its
+instructions tell the agent to show you the plan, and to ask before running any upload,
+release, tag push or workflow, one snap at a time.
+
+The server keeps its inventory in `~/.local/share/snap-maintainer/inventory.json`. To
+share one inventory with the command line, set `SNAP_MAINTAINER_INVENTORY` for both, or
+pass `-i FILE` before `mcp`.
+
+If `check_snaps` or `discover_snaps` says it can't reach the keyring, the MCP client
+started the server without your desktop session's `DBUS_SESSION_BUS_ADDRESS`, so
+snapcraft can't read your login. Either pass that variable through in the client's
+server configuration, or give the server an exported login instead:
+
+```sh
+(umask 077; snapcraft export-login - > ~/.config/snap-maintainer-login)   # readable only by you
+```
+
+Then set `SNAPCRAFT_STORE_CREDENTIALS` to that file's contents in the server's
+environment.
 
 ## How it works
 
@@ -173,9 +234,11 @@ plans include it in the build command.
 ## Development
 
 ```sh
-pip install pytest
+pip install -e '.[mcp]' pytest
 python3 -m pytest
 ```
+
+Without the `mcp` package, the MCP server tests are skipped.
 
 ## License
 
