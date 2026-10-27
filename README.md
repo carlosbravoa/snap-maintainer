@@ -10,6 +10,9 @@ when their upstream changes.
 2. **Update detection** (done): decide whether each snap needs a rebuild or a new
    release (`check`).
 3. **Rebuild and release**: run a rebuild and release when you ask for it.
+   - 3a (done): detect how each snap is built (`Builds via` in `discover`/`show`).
+   - 3b: wait for the new revision and release it, the same for every builder.
+   - 3c: trigger builds, one builder at a time.
 
 ## Usage
 
@@ -30,6 +33,7 @@ snap-maintainer discover               # all snaps; prompts for repos it can't f
 snap-maintainer discover yatta paint98 # just these snaps
 snap-maintainer discover --no-input    # never prompt (for cron/CI)
 snap-maintainer set-repo <snap> <url>  # pin a repo by hand; discovery never overwrites it
+snap-maintainer set-build <snap> <method> [--workflow FILE]  # pin how a snap gets rebuilt
 snap-maintainer show [--json]
 snap-maintainer check [snaps...] [-v]  # what needs a rebuild/release, and why
 snap-maintainer check --refresh        # ignore today's cached archive/USN data
@@ -52,6 +56,21 @@ and lists its workflows. Repos on other hosts are recorded but not checked yet.
 
 `status` is one of `ok`, `no-snapcraft-yaml`, `repo-unreachable`, `needs-repo` or
 `unregistered`.
+
+## How the builder is detected
+
+`discover` records how each snap gets built, under `build` in `inventory.json`:
+
+| Builder | Detected when | Preference |
+|---|---|---|
+| `github-workflow` | A workflow in `.github/workflows/` builds a snap (`snapcore/action-build`, or `snapcraft` / `snapcraft pack` in a `run:` step). It's recorded whether it also uploads (`snapcraft upload` or `snapcore/action-publish`), how it's triggered (tags, dispatch, release, push), and any channel it hard-codes. | 1st if it uploads, 3rd if it only builds |
+| `launchpad` | A Launchpad snap recipe builds from the repo for this snap name, found with one `findByURLPrefix` query per GitHub owner. | 2nd if it uploads, 4th if not |
+| `local` | Nothing above: build with snapcraft on this machine. | fallback |
+| `manual` | Only set by you: rebuilds happen outside this tool. | — |
+
+Other candidates are kept under `alternatives`. `set-build` overrides the detection, and
+discovery keeps your choice; for `github-workflow` it defaults to the detected workflow
+that uploads. `set-repo` re-runs detection unless you've set the builder yourself.
 
 ## How `check` decides
 

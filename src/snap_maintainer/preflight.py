@@ -87,7 +87,7 @@ def check_git() -> Check:
 def run(command: str) -> list[Check]:
     """Checks needed by ``command`` (discover, check, set-repo)."""
     checks = [check_snapcraft(), check_gh()]
-    if command == "set-repo":
+    if command in ("set-repo", "set-build"):
         checks = [check_gh()]
     if command == "check":
         checks += [check_unsquashfs(), check_git()]

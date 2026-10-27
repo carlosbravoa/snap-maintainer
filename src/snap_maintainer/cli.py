@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from snap_maintainer import checks, discovery, preflight, store, ui
+from snap_maintainer import builders, checks, discovery, preflight, store, ui
 
 EXIT_ERROR = 1
 EXIT_PREFLIGHT = 2
@@ -66,6 +66,12 @@ def _set_repo(args) -> int:
     return EXIT_ERROR
 
 
+def _set_build(args) -> int:
+    s = discovery.set_build(args.inventory, args.snap, args.method, args.workflow)
+    ui.success(ui.Text.assemble((args.snap, "bold"), " builds via ", ui.build_cell(s["build"])))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="snap-maintainer", description=__doc__)
     p.add_argument("-i", "--inventory", type=Path, default=Path("inventory.json"),
@@ -81,6 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     sr = sub.add_parser("set-repo", help="set a snap's source repo manually")
     sr.add_argument("snap")
     sr.add_argument("url")
+
+    sb = sub.add_parser("set-build", help="set how a snap gets rebuilt (overrides detection)")
+    sb.add_argument("snap")
+    sb.add_argument("method", choices=builders.METHODS)
+    sb.add_argument("--workflow", help="workflow file for github-workflow (default: the "
+                                       "detected one that uploads)")
 
     sh = sub.add_parser("show", help="print the current inventory")
     sh.add_argument("--json", action="store_true")
@@ -108,7 +120,8 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_PREFLIGHT
         if args.cmd == "check":
             return _check(args, *targets)
-        return {"discover": _discover, "set-repo": _set_repo}[args.cmd](args)
+        return {"discover": _discover, "set-repo": _set_repo,
+                "set-build": _set_build}[args.cmd](args)
     except store.StoreError as e:
         ui.error(str(e))
         return EXIT_ERROR

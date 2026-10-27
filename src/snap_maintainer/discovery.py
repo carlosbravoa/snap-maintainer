@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from snap_maintainer import builders
 from snap_maintainer import repo as repo_mod
 from snap_maintainer import store
 
@@ -82,6 +83,7 @@ def discover_snap(
     previous: dict | None,
     gh_login: str | None,
     ask: Callable[[str, str | None], str | None] | None,
+    lp_recipes: Callable[[str], list[dict] | None] = lambda owner: [],
 ) -> dict:
     name = entry["name"]
     errors: list[str] = []
@@ -100,6 +102,24 @@ def discover_snap(
 
     r = resolve_repo(name, info.links, (previous or {}).get("repo"), gh_login, ask)
     repo = r.to_dict() if r else None
+    return {
+        **_snap_record(entry, info, repo, errors),
+        "build": detect_build(name, repo, (previous or {}).get("build"), lp_recipes),
+    }
+
+
+def detect_build(name: str, repo: dict | None, previous: dict | None,
+                 lp_recipes: Callable[[str], list[dict] | None]) -> dict:
+    if previous and previous.get("source") == "user":
+        return previous
+    if not repo or not repo.get("verified"):
+        return {"method": "unknown", "source": "detected",
+                "evidence": "the repo isn't resolved yet", "alternatives": [], "notes": []}
+    return builders.detect(name, repo, lp_recipes(repo["owner"]))
+
+
+def _snap_record(entry: dict, info, repo: dict | None, errors: list[str]) -> dict:
+    name = entry["name"]
     return {
         "name": name,
         "visibility": entry.get("visibility"),
@@ -124,6 +144,13 @@ def discover(
     inventory = load(path)
     snaps = inventory.setdefault("snaps", {})
     login = repo_mod.gh_login()
+    lp_cache: dict[str, list[dict] | None] = {}
+
+    def lp_recipes(owner: str) -> list[dict] | None:
+        if owner not in lp_cache:
+            lp_cache[owner] = builders.launchpad_recipes(owner)
+        return lp_cache[owner]
+
     registered = store.registered_snaps()
     if only:
         unknown = set(only) - {s["name"] for s in registered}
@@ -133,7 +160,8 @@ def discover(
 
     for i, entry in enumerate(registered):
         progress(entry["name"], i, len(registered))
-        snaps[entry["name"]] = discover_snap(entry, snaps.get(entry["name"]), login, ask)
+        snaps[entry["name"]] = discover_snap(entry, snaps.get(entry["name"]), login, ask,
+                                             lp_recipes)
         save(path, inventory)  # persist as we go so an interrupted run isn't wasted
 
     if not only:
@@ -151,5 +179,34 @@ def set_repo(path: Path, name: str, url: str) -> dict:
     snap = inventory.setdefault("snaps", {}).setdefault(name, {"name": name})
     r = repo_mod.inspect(repo_mod.Repo(url=repo_mod.normalize(url), source="user")).to_dict()
     snap["repo"], snap["status"] = r, status_of(r)
+    snap["build"] = detect_build(name, r, snap.get("build"), builders.launchpad_recipes)
+    save(path, inventory)
+    return snap
+
+
+def set_build(path: Path, name: str, method: str, workflow: str | None = None) -> dict:
+    """Pin a snap's builder by hand; discovery never overwrites it."""
+    inventory = load(path)
+    snap = inventory.get("snaps", {}).get(name)
+    if snap is None:
+        raise store.StoreError(f"{name} isn't in the inventory; run discover first")
+    build = {"method": method, "source": "user", "evidence": "set by you",
+             "alternatives": [], "notes": []}
+    if method == "github-workflow":
+        repo = snap.get("repo") or {}
+        if not repo.get("verified"):
+            raise store.StoreError(f"{name} has no verified GitHub repo; set it with set-repo first")
+        found = {w["path"]: w for w in builders.workflow_candidates(repo)}
+        if workflow is None:
+            uploading = [w for w in found.values() if w["uploads"]] or list(found.values())
+            if not uploading:
+                raise store.StoreError(f"no workflow in {repo['url']} builds a snap; "
+                                       "pass --workflow to choose one anyway")
+            workflow = uploading[0]["path"]
+        elif not workflow.startswith(".github/"):
+            workflow = f".github/workflows/{workflow}"
+        build["workflow"] = found.get(workflow) or {"path": workflow, "uploads": None}
+        build["evidence"] = f"set by you: {workflow}"
+    snap["build"] = build
     save(path, inventory)
     return snap

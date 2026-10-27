@@ -12,7 +12,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn
 from rich.table import Table
 from rich.text import Text
 
-from snap_maintainer import checks
+from snap_maintainer import builders, checks
 from snap_maintainer.preflight import Check
 
 out = Console()
@@ -70,6 +70,8 @@ def _repo_cell(repo: dict) -> Text:
         t.append(f"  {label}", style="grey50 italic")
     if repo.get("redirected_from"):
         t.append(f"\n↪ moved from {repo['redirected_from'].rsplit('/', 1)[-1]}", style="yellow")
+    if repo.get("snapcraft_yaml") and repo["snapcraft_yaml"] != "snap/snapcraft.yaml":
+        t.append(f"\n{repo['snapcraft_yaml']}", style="grey50")
     if repo.get("error") and not repo.get("verified"):
         t.append(f"\n{repo['error'][:80]}", style="red")
     return t
@@ -85,6 +87,39 @@ def _published_cell(channels: list[dict]) -> Text:
     t = Text(f"{shown[0]['risk']} ", style="grey50")
     t.append(" / ".join(versions), style="bold")
     t.append(f"  {' '.join(arches)}", style="grey50")
+    return t
+
+
+def build_cell(build: dict | None) -> Text:
+    if not build or build.get("method") in (None, "unknown"):
+        return Text("—", style="grey50")
+    m = build["method"]
+    t = Text()
+    if m == "github-workflow":
+        wf = build.get("workflow") or {}
+        t.append("GitHub Actions", style="bold").append(f" · {wf.get('path', '?').rsplit('/', 1)[-1]}")
+        trig = builders.describe_trigger(wf["triggers"]) if wf.get("triggers") else None
+        detail = Text("\n")
+        if trig:
+            detail.append(trig, style="grey50")
+        if wf.get("uploads") is False:
+            detail.append("  builds only, no upload", style="yellow")
+        elif wf.get("uploads"):
+            chans = ", ".join(wf.get("channels") or [])
+            detail.append(f"  uploads{' to ' + chans if chans else ''}", style="grey50")
+        t.append_text(detail)
+    elif m == "launchpad":
+        r = build.get("recipe") or {}
+        t.append("Launchpad", style="bold").append(f" · {r.get('name', '?')}", style=f"link {r.get('url')}" if r.get("url") else "")
+        bits = ["auto-builds" if r.get("auto_build") else "manual builds",
+                "uploads" if r.get("store_upload") else "no upload"]
+        t.append("\n" + " · ".join(bits), style="grey50" if r.get("store_upload") else "yellow")
+    elif m == "local":
+        t.append("local snapcraft", style="grey70")
+    else:
+        t.append(m, style="grey70")
+    if build.get("source") == "user":
+        t.append("  set by you", style="grey50 italic")
     return t
 
 
@@ -172,7 +207,7 @@ def inventory_table(inventory: dict) -> None:
     table.add_column("Status", no_wrap=True)
     table.add_column("Published")
     table.add_column("Repository")
-    table.add_column("snapcraft.yaml", style="grey50")
+    table.add_column("Builds via")
     for name in sorted(snaps):
         s = snaps[name]
         color, dot, label = STATUS_STYLE.get(s.get("status"), ("white", "●", s.get("status", "?")))
@@ -181,7 +216,7 @@ def inventory_table(inventory: dict) -> None:
             name_cell.append(" 🔒", style="grey50")
         table.add_row(name_cell, Text(f"{dot} {label}", style=color),
                       _published_cell(s.get("channels", [])), _repo_cell(s.get("repo") or {}),
-                      (s.get("repo") or {}).get("snapcraft_yaml") or "—")
+                      build_cell(s.get("build")))
     out.print(table)
 
     by_repo: dict[str, list[str]] = {}
@@ -351,5 +386,8 @@ def error(msg: str, hint: str | None = None) -> None:
         err.print(Text.assemble(("  ", ""), (hint, "grey50")))
 
 
-def success(msg: str) -> None:
-    out.print(Text.assemble(("✓ ", "bold green"), msg))
+def success(msg: str | Text) -> None:
+    """``msg`` may use rich markup, or be a Text."""
+    line = Text("✓ ", style="bold green")
+    line.append_text(msg if isinstance(msg, Text) else Text.from_markup(msg))
+    out.print(line)
