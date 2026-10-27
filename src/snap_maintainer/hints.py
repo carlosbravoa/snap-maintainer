@@ -31,7 +31,8 @@ def _why(res: dict) -> list[str]:
     if sec:
         pkgs = sorted({r["source"] for r in sec})
         out.append(f"{len(sec)} security notice(s) for {', '.join(pkgs)}")
-    out += [r["detail"] for r in reasons if r["kind"] in ("source", "upstream")]
+    out += [r["detail"] + (f" ({r['warning']})" if r.get("warning") else "")
+            for r in reasons if r["kind"] in ("source", "upstream")]
     return out
 
 

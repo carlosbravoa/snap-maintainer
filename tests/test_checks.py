@@ -1,4 +1,7 @@
-from snap_maintainer import archive, debver, snapcraft_yaml, usn
+import json
+import types
+
+from snap_maintainer import archive, checks, debver, snapcraft_yaml, usn
 from snap_maintainer.checks import newer_tags, reference_targets
 from snap_maintainer.store import parse_revisions_table
 
@@ -164,3 +167,26 @@ def test_match_notices_inferred_uses_upload_date():
     srcs = archive.sources_of({"nginx"}, _index())
     uploaded = datetime(2026, 10, 13, tzinfo=timezone.utc)
     assert [h[0]["usn"] for h in match_notices(NOTICES, srcs, uploaded, "noble", [])] == ["USN-3-1"]
+
+
+def _commits(*dates):
+    return json.dumps([{"sha": f"{i:040x}", "commit": {"committer": {"date": d}, "message": "m"}}
+                       for i, d in enumerate(dates)])
+
+
+def _source(monkeypatch, out):
+    monkeypatch.setattr(checks.repo_mod, "run_gh", lambda args: (0, out))
+    repo = {"owner": "o", "name": "n", "default_branch": "main"}
+    sy = types.SimpleNamespace(version=None)
+    targets = [{"risk": "stable", "revision": 5, "uploaded": "2026-10-27T20:04:26Z"}]
+    return checks.source_reasons(repo, sy, targets)
+
+
+def test_source_commit_soon_after_upload_warns(monkeypatch):
+    [r] = _source(monkeypatch, _commits("2026-10-27T20:46:29Z"))
+    assert "2026-10-27 20:04 UTC" in r["warning"] and "2026-10-27 20:46 UTC" in r["warning"]
+
+
+def test_source_commit_long_after_upload_no_warning(monkeypatch):
+    [r] = _source(monkeypatch, _commits("2026-11-02T09:00:00Z", "2026-10-27T20:46:29Z"))
+    assert "warning" not in r

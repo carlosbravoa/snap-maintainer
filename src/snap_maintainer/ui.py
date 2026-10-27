@@ -361,6 +361,8 @@ def _detail_panel(name: str, res: dict, verbose: bool) -> Panel | None:
             continue
         icon = "✎" if r["kind"] == "source" else "⬆"
         grid.add_row(Text(f"{icon} {r['kind']}", style="yellow"), r["detail"])
+        if r.get("warning"):
+            grid.add_row("", Text(f"⚠ {r['warning']}", style="yellow italic"))
         for cm in (r.get("commits") or [])[:limit]:
             msg = cm["message"] if len(cm["message"]) <= 72 else cm["message"][:71] + "…"
             grid.add_row("", Text.assemble((cm["sha"][:7], "cyan"), "  ", msg))

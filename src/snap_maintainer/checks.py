@@ -27,9 +27,17 @@ VERDICT_OK = "up-to-date"
 VERDICT_UNKNOWN = "unknown"
 VERDICT_UNPUBLISHED = "unpublished"
 
+# commits this close after an upload may be the very change that was uploaded
+# (built from the working tree, committed afterwards)
+SAME_CHANGE_WINDOW_S = 24 * 3600
+
 
 def _ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def _hm(s: str) -> str:
+    return _ts(s).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _now() -> str:
@@ -177,7 +185,8 @@ def source_reasons(repo: dict, sy, targets: list[dict]) -> list[dict]:
     if code == 0:
         commits = json.loads(out)
         if commits:
-            reasons.append({
+            last = commits[0]["commit"]["committer"]["date"]
+            reason = {
                 "kind": "source",
                 "detail": f"{len(commits)}{'+' if len(commits) == 100 else ''} commit(s) on "
                           f"{repo['default_branch']} since {ref['risk']} r{ref['revision']} "
@@ -187,7 +196,14 @@ def source_reasons(repo: dict, sy, targets: list[dict]) -> list[dict]:
                      "message": c["commit"]["message"].splitlines()[0]}
                     for c in commits[:10]
                 ],
-            })
+            }
+            if (_ts(last) - _ts(since)).total_seconds() <= SAME_CHANGE_WINDOW_S:
+                reason["warning"] = (
+                    f"may be a false positive: snap uploaded at {_hm(since)}, "
+                    f"last commit at {_hm(last)}; if the upload was built from these "
+                    "changes before they were committed, it is already up to date"
+                )
+            reasons.append(reason)
     if sy.version and ref.get("version") and sy.version != ref["version"]:
         reasons.append({
             "kind": "source",
