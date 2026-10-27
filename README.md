@@ -176,3 +176,7 @@ plans include it in the build command.
 pip install pytest
 python3 -m pytest
 ```
+
+## License
+
+[MIT](LICENSE)
