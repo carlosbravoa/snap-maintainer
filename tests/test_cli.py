@@ -65,3 +65,12 @@ def test_check_report_renders(monkeypatch):
     assert "REBUILD" in text and "UP TO DATE" in text
     assert "1.1 → 1.2" in text and "USN-1-1" in text and "…" in text
     assert text.index(" a ") < text.index(" b ")  # rebuilds sort first
+
+
+def test_version_flag(capsys):
+    import pytest
+    from snap_maintainer import __version__, cli
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--version"])
+    assert e.value.code == 0
+    assert capsys.readouterr().out.strip() == f"snap-maintainer {__version__}"

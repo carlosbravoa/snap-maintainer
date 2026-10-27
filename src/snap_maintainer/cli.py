@@ -9,7 +9,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from snap_maintainer import builders, checks, discovery, hints, preflight, store, ui
+from snap_maintainer import __version__, builders, checks, discovery, hints, preflight, store, ui
 
 EXIT_ERROR = 1
 EXIT_PREFLIGHT = 2
@@ -115,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="inventory file (default: $SNAP_MAINTAINER_INVENTORY, or "
                         "./inventory.json; for mcp, ~/.local/share/snap-maintainer/inventory.json)")
     p.add_argument("--debug", action="store_true", help="show tracebacks on errors")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("discover", help="scan your published snaps and locate their repos")
