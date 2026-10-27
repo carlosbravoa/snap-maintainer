@@ -16,7 +16,8 @@ it, matched to how that snap is built: a GitHub Actions workflow, a Launchpad re
 or a local `snapcraft pack`.
 
 It never builds, uploads or releases anything itself. Those steps need someone
-watching, so the tool stops at a plan that a person, or an agent, can follow.
+watching, so the tool stops at a plan that a person, or an agent, can follow. Agents
+can also use it directly through its built-in [MCP server](#use-it-from-an-agent-mcp).
 
 ## Requirements
 
@@ -28,6 +29,7 @@ watching, so the tool stops at a plan that a person, or an agent, can follow.
   - `unsquashfs` (package `squashfs-tools`): reads build manifests from published
     snaps, for exact security checks.
   - `git`: compares pinned `source-tag`s with upstream tags.
+  - The `mcp` Python package: only for the MCP server (`snap-maintainer mcp`).
 
 The tool checks all of these when it starts, and tells you the command to fix anything
 that's missing.
@@ -38,6 +40,12 @@ With [pipx](https://pipx.pypa.io/):
 
 ```sh
 pipx install git+https://github.com/carlosbravoa/snap-maintainer.git
+```
+
+To use it from an agent, add the MCP support too:
+
+```sh
+pipx inject snap-maintainer mcp
 ```
 
 From a checkout, for development:
@@ -223,7 +231,9 @@ plans include it in the build command.
 
 ## Data and privacy
 
-- `inventory.json` is written to the current directory, or the file given with `-i`.
+- `inventory.json` is written to the current directory, the file given with `-i`, or
+  `SNAP_MAINTAINER_INVENTORY`. The MCP server uses
+  `~/.local/share/snap-maintainer/inventory.json` unless one of those is set.
 - Ubuntu archive and security data is cached for 24 hours in
   `~/.cache/snap-maintainer` (about 20 MB per Ubuntu release and architecture).
 - Manifests of published revisions are cached there permanently. Each public
