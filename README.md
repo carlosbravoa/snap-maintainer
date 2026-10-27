@@ -252,4 +252,4 @@ Without the `mcp` package, the MCP server tests are skipped.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/carlosbravoa/snap-maintainer/blob/master/LICENSE)
