@@ -43,6 +43,9 @@ SEVERITY_STYLE = {
     "negligible": "grey50",
 }
 
+# every detail box gets the same width (or the terminal's, if narrower)
+PANEL_WIDTH = 100
+
 SOURCE_LABEL = {
     "user": "set by you",
     "prompt": "entered by you",
@@ -290,12 +293,13 @@ def _detail_panel(name: str, res: dict, verbose: bool) -> Panel | None:
     sec = [r for r in reasons if r["kind"] == "security"]
     if sec:
         limit = len(sec) if verbose else 4
+        # fixed widths so the columns line up from one box to the next
         t = Table(box=None, pad_edge=False, show_header=True, header_style="grey50", expand=False)
-        t.add_column("Notice", no_wrap=True)
-        t.add_column("Severity", no_wrap=True)
-        t.add_column("Package", style="bold")
-        t.add_column("Fix")
-        t.add_column("Issued", style="grey50", no_wrap=True)
+        t.add_column("Notice", width=11, no_wrap=True)
+        t.add_column("Severity", width=8, no_wrap=True)
+        t.add_column("Package", width=16, style="bold", overflow="ellipsis", no_wrap=True)
+        t.add_column("Fix", width=40, overflow="fold")
+        t.add_column("Issued", width=10, style="grey50", no_wrap=True)
         for r in sec[:limit]:
             usn_id = r["usn"].removeprefix("USN-")
             sev = r.get("severity") or "?"
@@ -310,25 +314,33 @@ def _detail_panel(name: str, res: dict, verbose: bool) -> Panel | None:
         if len(sec) > limit:
             parts.append(Text(f"  + {len(sec) - limit} more security notice(s)", style="grey50"))
 
+    # label column + text column, so long lines wrap under the text, not the label
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(width=10, no_wrap=True)
+    grid.add_column(overflow="fold")
+    limit = 10 if verbose else 3
     for r in reasons:
         if r["kind"] == "security":
             continue
-        icon, style = ("✎", "yellow") if r["kind"] == "source" else ("⬆", "yellow")
-        parts.append(Text.assemble((f"{icon} ", style), (r["kind"], f"bold {style}"), "  ", r["detail"]))
-        for cm in (r.get("commits") or [])[: (10 if verbose else 3)]:
+        icon = "✎" if r["kind"] == "source" else "⬆"
+        grid.add_row(Text(f"{icon} {r['kind']}", style="yellow"), r["detail"])
+        for cm in (r.get("commits") or [])[:limit]:
             msg = cm["message"] if len(cm["message"]) <= 72 else cm["message"][:71] + "…"
-            parts.append(Text.assemble(("    ", ""), (cm["sha"][:7], "cyan"), "  ", msg))
-        extra = len(r.get("commits") or []) - (10 if verbose else 3)
+            grid.add_row("", Text.assemble((cm["sha"][:7], "cyan"), "  ", msg))
+        extra = len(r.get("commits") or []) - limit
         if extra > 0:
-            parts.append(Text(f"    + {extra} more commit(s)", style="grey50"))
-
+            grid.add_row("", Text(f"+ {extra} more commit(s)", style="grey50"))
     for n in notes:
-        parts.append(Text.assemble(("ℹ ", "blue"), (n, "grey50")))
+        grid.add_row(Text("ℹ note", style="blue"), Text(n, style="grey50"))
+    if grid.row_count:
+        if parts:
+            parts.append(Text(""))
+        parts.append(grid)
 
-    color = VERDICT_STYLE.get(res["verdict"], ("", "", "white"))[2]
-    return Panel(Group(*parts), title=Text.assemble((name, "bold"), "  ", badge(res["verdict"])),
-                 title_align="left", border_style=color, box=box.ROUNDED, padding=(0, 1),
-                 expand=False)
+    _, label, color = VERDICT_STYLE.get(res["verdict"], ("", res["verdict"].upper(), "white"))
+    title = Text.assemble((name, "bold"), "  ", ("● ", color), (label.lower(), color))
+    return Panel(Group(*parts), title=title, title_align="left", border_style="grey35",
+                 box=box.ROUNDED, padding=(0, 1), width=min(out.width, PANEL_WIDTH))
 
 
 # ---------------------------------------------------------------- messages
