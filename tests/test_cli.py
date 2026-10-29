@@ -2,7 +2,7 @@ import io
 
 from rich.console import Console
 
-from snap_maintainer import checks, preflight, ui
+from snap_maintainer import checks, cli, discovery, preflight, ui
 
 
 def _capture(monkeypatch):
@@ -74,3 +74,23 @@ def test_version_flag(capsys):
         cli.main(["--version"])
     assert e.value.code == 0
     assert capsys.readouterr().out.strip() == f"snap-maintainer {__version__}"
+
+
+def test_default_inventory(monkeypatch, tmp_path):
+    monkeypatch.setenv("SNAP_MAINTAINER_INVENTORY", str(tmp_path / "x.json"))
+    assert discovery.default_inventory() == tmp_path / "x.json"
+    monkeypatch.delenv("SNAP_MAINTAINER_INVENTORY")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert discovery.default_inventory() == tmp_path / "snap-maintainer" / "inventory.json"
+
+
+def test_legacy_inventory_in_cwd_is_used_until_moved(monkeypatch, tmp_path):
+    monkeypatch.delenv("SNAP_MAINTAINER_INVENTORY", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    new = tmp_path / "data" / "snap-maintainer" / "inventory.json"
+    assert cli._default_inventory() == new
+    (tmp_path / "inventory.json").write_text("{}")
+    assert cli._default_inventory().resolve() == tmp_path / "inventory.json"
+    discovery.save(new, {"snaps": {}})
+    assert cli._default_inventory() == new

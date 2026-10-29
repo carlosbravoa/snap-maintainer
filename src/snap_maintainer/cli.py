@@ -109,11 +109,23 @@ def _mcp(args) -> int:
     return 0
 
 
+def _default_inventory() -> Path:
+    """The XDG inventory, unless only a pre-0.1.4 ./inventory.json exists."""
+    path = discovery.default_inventory()
+    legacy = Path("inventory.json")
+    if (not os.environ.get("SNAP_MAINTAINER_INVENTORY") and not path.exists()
+            and legacy.exists()):
+        ui.warn(f"Using ./inventory.json; the inventory now lives in {path}.",
+                f"Move it there: mkdir -p {path.parent} && mv inventory.json {path}")
+        return legacy
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="snap-maintainer", description=__doc__)
     p.add_argument("-i", "--inventory", type=Path, default=None,
                    help="inventory file (default: $SNAP_MAINTAINER_INVENTORY, or "
-                        "./inventory.json; for mcp, ~/.local/share/snap-maintainer/inventory.json)")
+                        "~/.local/share/snap-maintainer/inventory.json)")
     p.add_argument("--debug", action="store_true", help="show tracebacks on errors")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -158,8 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "mcp":
         return _mcp(args)
     if args.inventory is None:
-        env = os.environ.get("SNAP_MAINTAINER_INVENTORY")
-        args.inventory = Path(env).expanduser() if env else Path("inventory.json")
+        args.inventory = _default_inventory()
     try:
         if args.cmd == "plan":
             return _plan(args)

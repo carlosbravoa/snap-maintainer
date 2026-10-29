@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -24,6 +25,15 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def default_inventory() -> Path:
+    """$SNAP_MAINTAINER_INVENTORY, or inventory.json in the XDG data directory."""
+    env = os.environ.get("SNAP_MAINTAINER_INVENTORY")
+    if env:
+        return Path(env).expanduser()
+    base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "snap-maintainer" / "inventory.json"
+
+
 def load(path: Path) -> dict:
     if path.exists():
         return json.loads(path.read_text())
@@ -31,6 +41,7 @@ def load(path: Path) -> dict:
 
 
 def save(path: Path, inventory: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(inventory, indent=2, sort_keys=False) + "\n")
     tmp.replace(path)

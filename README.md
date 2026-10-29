@@ -71,7 +71,6 @@ You can also run it without installing, from the checkout:
 ## Quick start
 
 ```sh
-mkdir ~/snaps && cd ~/snaps    # the inventory is saved in the current directory
 snap-maintainer discover       # find your snaps, their repos and how they're built
 snap-maintainer check          # decide which need a rebuild or release
 snap-maintainer plan           # the steps to rebuild and release each of them
@@ -84,7 +83,7 @@ manifests, so it takes a minute or two. Later runs use a cache.
 
 | Command | What it does |
 |---|---|
-| `discover [snaps...]` | Lists the snaps registered to your account, their channels, source repos and builders, and saves them to `inventory.json`. Prompts for a repo it can't find (`--no-input` to skip). |
+| `discover [snaps...]` | Lists the snaps registered to your account, their channels, source repos and builders, and saves them to the inventory. Prompts for a repo it can't find (`--no-input` to skip). |
 | `check [snaps...]` | Gives each snap a verdict, `rebuild`, `update` or `up to date`, with the reasons. `-v` shows every notice, commit and note; `--refresh` re-downloads cached Ubuntu data. |
 | `plan [snaps...]` | Shows the steps to rebuild and release every snap that needs it, or just the named ones. `--all` includes up-to-date snaps; `--markdown` and `--json` print it for an issue, an agent or a script. Runs nothing. |
 | `show [--json]` | Prints the inventory without contacting anything. |
@@ -94,10 +93,12 @@ manifests, so it takes a minute or two. Later runs use a cache.
 
 Repos and builders you set by hand are never overwritten by `discover`.
 
+The inventory is kept in `~/.local/share/snap-maintainer/inventory.json` (or under
+`$XDG_DATA_HOME`), so it's the same wherever you run the command.
+
 Global options go before the command: `-i FILE` uses another inventory file, and
 `--debug` shows a traceback for unexpected errors. The `SNAP_MAINTAINER_INVENTORY`
-environment variable sets the inventory file too, which is handy for always using the
-same one.
+environment variable sets the inventory file too.
 
 Exit codes are `0` for success, `1` for an error, `2` when a required tool or login is
 missing, and `130` when interrupted.
@@ -199,9 +200,9 @@ Like the command line, the server never builds, uploads or releases anything. It
 instructions tell the agent to show you the plan, and to ask before running any upload,
 release, tag push or workflow, one snap at a time.
 
-The server keeps its inventory in `~/.local/share/snap-maintainer/inventory.json`. To
-share one inventory with the command line, set `SNAP_MAINTAINER_INVENTORY` for both, or
-pass `-i FILE` before `mcp`.
+The server shares the command line's inventory,
+`~/.local/share/snap-maintainer/inventory.json`. To use another one, set
+`SNAP_MAINTAINER_INVENTORY` or pass `-i FILE` before `mcp`.
 
 If `check_snaps` or `discover_snaps` says it can't reach the keyring, the MCP client
 started the server without your desktop session's `DBUS_SESSION_BUS_ADDRESS`, so
@@ -281,9 +282,10 @@ plans include it in the build command.
 
 ## Data and privacy
 
-- `inventory.json` is written to the current directory, the file given with `-i`, or
-  `SNAP_MAINTAINER_INVENTORY`. The MCP server uses
-  `~/.local/share/snap-maintainer/inventory.json` unless one of those is set.
+- The inventory is written to `~/.local/share/snap-maintainer/inventory.json`, the
+  file given with `-i`, or `SNAP_MAINTAINER_INVENTORY`. Versions up to 0.1.3 wrote
+  `inventory.json` to the current directory; if one is there and the new file isn't,
+  it's still used, with a warning saying how to move it.
 - Ubuntu archive and security data is cached for 24 hours in
   `~/.cache/snap-maintainer` (about 20 MB per Ubuntu release and architecture).
 - Manifests of published revisions are cached there permanently. Each public

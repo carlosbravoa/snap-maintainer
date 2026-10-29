@@ -435,6 +435,12 @@ def error(msg: str, hint: str | None = None) -> None:
         err.print(Text.assemble(("  ", ""), (hint, "grey50")))
 
 
+def warn(msg: str, hint: str | None = None) -> None:
+    err.print(Text.assemble(("! ", "bold yellow"), (msg, "yellow")))
+    if hint:
+        err.print(Text.assemble(("  ", ""), (hint, "grey50")))
+
+
 def success(msg: str | Text) -> None:
     """``msg`` may use rich markup, or be a Text."""
     line = Text("✓ ", style="bold green")

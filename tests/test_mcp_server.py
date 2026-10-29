@@ -64,11 +64,3 @@ def test_missing_login_is_a_tool_error(monkeypatch):
         Check("snapcraft", False, True, "not logged in", fix="snapcraft login")])
     with pytest.raises(mcp_server.ToolError, match="fix: snapcraft login"):
         mcp_server._require("check")
-
-
-def test_default_inventory(monkeypatch, tmp_path):
-    monkeypatch.setenv("SNAP_MAINTAINER_INVENTORY", str(tmp_path / "x.json"))
-    assert mcp_server.default_inventory() == tmp_path / "x.json"
-    monkeypatch.delenv("SNAP_MAINTAINER_INVENTORY")
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    assert mcp_server.default_inventory() == tmp_path / "snap-maintainer" / "inventory.json"

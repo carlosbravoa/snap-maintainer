@@ -6,7 +6,6 @@ Like the CLI, it never builds, uploads or releases. Run with `snap-maintainer mc
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -44,15 +43,7 @@ server = MCPServer(
 _lock = anyio.Lock()  # one inventory writer at a time
 
 
-def default_inventory() -> Path:
-    env = os.environ.get("SNAP_MAINTAINER_INVENTORY")
-    if env:
-        return Path(env).expanduser()
-    base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    return base / "snap-maintainer" / "inventory.json"
-
-
-INVENTORY = default_inventory()
+INVENTORY = discovery.default_inventory()
 
 
 def _require(command: str) -> None:
